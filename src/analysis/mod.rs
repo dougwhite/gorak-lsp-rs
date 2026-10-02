@@ -10,3 +10,8 @@ mod hover;
 mod rename;
 
 mod diagnostics;
+
+mod cancellation;
+pub(crate) use cancellation::Cancellation;
+
+pub(crate) use queries::ReferenceSearch;

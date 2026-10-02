@@ -84,6 +84,7 @@ impl Entry {
 }
 #[derive(Default)]
 pub struct Engine {
+    pub(crate) cancellation: super::Cancellation,
     pub graph: Graph,
     pub entries: Vec<Entry>,
     uris: HashMap<String, DocumentId>,
@@ -113,6 +114,9 @@ pub fn component_key(uri: &str) -> &str {
 }
 
 impl Engine {
+    pub(crate) fn interrupted(&self) -> bool {
+        self.cancellation.is_cancelled()
+    }
     pub fn update(
         &mut self,
         uri: &str,
@@ -196,8 +200,13 @@ impl Engine {
     }
     /// Rebuild expanded syntax at a request boundary, after the latest graph and source updates.
     pub fn prepare(&mut self) {
-        let dirty = std::mem::take(&mut self.dirty_expansions);
-        for id in dirty {
+        let mut dirty = std::mem::take(&mut self.dirty_expansions).into_iter();
+        while let Some(id) = dirty.next() {
+            if self.interrupted() {
+                self.dirty_expansions.insert(id);
+                self.dirty_expansions.extend(dirty);
+                break;
+            }
             if !self.entry(id).requires_preprocessing {
                 continue;
             }

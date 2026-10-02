@@ -11,6 +11,15 @@ use crate::{
 use serde_json::{Value, json};
 use std::collections::HashSet;
 
+/// Progress survives scheduling interruptions, but never a workspace edit.
+/// Only results and a cursor are retained; source details remain in the LRU.
+pub(crate) struct ReferenceSearch {
+    pub target: Binding,
+    pub name: String,
+    pub next_document: usize,
+    pub locations: Vec<Location>,
+}
+
 impl Engine {
     pub fn definitions(&self, uri: &str, position: Position) -> Vec<Location> {
         self.target(uri, position)
@@ -30,53 +39,13 @@ impl Engine {
             return Vec::new();
         }
         let target = self.canonical(targets[0]);
-        let name = self
-            .document(target.document)
-            .names
-            .get(self.symbol(target).name);
         let mut locations = Vec::new();
-        let mut seen = HashSet::new();
         for (i, entry) in self.entries.iter().enumerate() {
-            let doc = &entry.document;
-            if local_only && doc.source.uri.as_ref() != uri {
-                continue;
+            if self.interrupted() {
+                break;
             }
-            let Some(name_id) = doc.names.find(name) else {
-                continue;
-            };
-            let id = DocumentId(i);
-            if include_declaration {
-                for (j, symbol) in doc.symbols.iter().enumerate() {
-                    if !(j == 0 && symbol.kind == SymbolKind::Function)
-                        && symbol.name == name_id
-                        && self.same_symbol(
-                            Binding {
-                                document: id,
-                                symbol: crate::syntax::model::SymbolId(j as u32),
-                            },
-                            target,
-                        )
-                        && seen.insert((i, symbol.span.start, symbol.span.end))
-                    {
-                        locations.push(self.span_location(id, symbol.span));
-                    }
-                }
-            }
-            for (j, token) in doc.tokens.iter().enumerate() {
-                if token.kind != Kind::Name || token.name != name_id {
-                    continue;
-                }
-                let declaration = self.declaration_at(id, token.span).is_some();
-                if declaration && !include_declaration {
-                    continue;
-                }
-                let resolved = self.resolve(id, j);
-                if resolved.len() == 1
-                    && self.same_symbol(resolved[0], target)
-                    && seen.insert((i, token.span.start, token.span.end))
-                {
-                    locations.push(self.span_location(id, token.span));
-                }
+            if !local_only || entry.document.source.uri.as_ref() == uri {
+                locations.extend(self.references_in(target, DocumentId(i), include_declaration));
             }
         }
         locations.sort_by(|a, b| {
@@ -87,6 +56,62 @@ impl Engine {
             ))
         });
         locations.dedup();
+        locations
+    }
+    /// Search one resident document; callers can release its details immediately afterwards.
+    pub(crate) fn references_in(
+        &self,
+        target: Binding,
+        id: DocumentId,
+        include_declaration: bool,
+    ) -> Vec<Location> {
+        let name = self
+            .document(target.document)
+            .names
+            .get(self.symbol(target).name);
+        let i = id.0;
+        let doc = self.document(id);
+        let mut locations = Vec::new();
+        let mut seen = HashSet::new();
+        let Some(name_id) = doc.names.find(name) else {
+            return locations;
+        };
+        if include_declaration {
+            for (j, symbol) in doc.symbols.iter().enumerate() {
+                if !(j == 0 && symbol.kind == SymbolKind::Function)
+                    && symbol.name == name_id
+                    && self.same_symbol(
+                        Binding {
+                            document: id,
+                            symbol: crate::syntax::model::SymbolId(j as u32),
+                        },
+                        target,
+                    )
+                    && seen.insert((i, symbol.span.start, symbol.span.end))
+                {
+                    locations.push(self.span_location(id, symbol.span));
+                }
+            }
+        }
+        for (j, token) in doc.tokens.iter().enumerate() {
+            if j % 256 == 0 && self.interrupted() {
+                break;
+            }
+            if token.kind != Kind::Name || token.name != name_id {
+                continue;
+            }
+            let declaration = self.declaration_at(id, token.span).is_some();
+            if declaration && !include_declaration {
+                continue;
+            }
+            let resolved = self.resolve(id, j);
+            if resolved.len() == 1
+                && self.same_symbol(resolved[0], target)
+                && seen.insert((i, token.span.start, token.span.end))
+            {
+                locations.push(self.span_location(id, token.span));
+            }
+        }
         locations
     }
     pub fn signature_label(&self, owner: Binding) -> String {
@@ -270,6 +295,9 @@ impl Engine {
         let mut result = Vec::new();
         for (i, entry) in self.entries.iter().enumerate() {
             for (j, s) in entry.document.symbols.iter().enumerate() {
+                if j % 256 == 0 && self.interrupted() {
+                    return Value::Null;
+                }
                 let b = Binding {
                     document: DocumentId(i),
                     symbol: crate::syntax::model::SymbolId(j as u32),

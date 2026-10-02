@@ -8,3 +8,5 @@ pub mod server;
 pub mod source;
 pub mod syntax;
 pub mod workspace;
+
+mod scheduler;
