@@ -52,4 +52,4 @@ jobs:
       - run: python scripts/collect-release.py artifacts release
       - env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --prerelease --title "Gorak language server $GITHUB_REF_NAME" --notes "Windows x64 and Linux x64 alpha. Run with --stdio. See README for limitations. SHA256SUMS verifies the release files."
+        run: gh release create "$GITHUB_REF_NAME" release/* --verify-tag --prerelease --title "gorak language server $GITHUB_REF_NAME" --notes "Windows x64 and Linux x64 alpha. Run with --stdio. See README for limitations. SHA256SUMS verifies the release files."

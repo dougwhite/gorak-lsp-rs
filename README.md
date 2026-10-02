@@ -1,8 +1,8 @@
-# Gorak language server
+# gorak language server
 
-OpenROAD navigation, references, outline, hover and completion for exported Gorak source repositories. Runs locally; no database connection or telemetry.
+OpenROAD navigation, references, outline, hover and completion for exported [gorak](https://github.com/dougwhite/gorak) source repositories. Runs locally; no database connection or telemetry.
 
-For VS Code, install [Gorak OpenROAD](https://github.com/dougwhite/gorak-vscode-ext). Standalone Windows x64 and Linux x64 binaries are on [Releases](https://github.com/dougwhite/gorak-lsp-rs/releases); launch with `--stdio`.
+For VS Code, install [gorak OpenROAD](https://github.com/dougwhite/gorak-vscode-ext). Standalone Windows x64 and Linux x64 binaries are on [Releases](https://github.com/dougwhite/gorak-lsp-rs/releases); launch with `--stdio`.
 
 Alpha: analysis is incomplete and is not an OpenROAD compiler. Active analysis is synchronous; a large query can delay responses. Caches may contain source and stay in the local user profile. No source is uploaded.
 

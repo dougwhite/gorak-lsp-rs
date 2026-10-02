@@ -7,7 +7,7 @@ publish = false
 license = "MIT"
 repository = "https://github.com/dougwhite/gorak-lsp-rs"
 default-run = "gorak-lsp-rs"
-description = "Native OpenROAD language analysis for Gorak workspaces"
+description = "Native OpenROAD language analysis for gorak workspaces"
 
 [dependencies]
 anyhow = "1"

@@ -1,4 +1,4 @@
-# Native Gorak language server
+# Native gorak language server
 
 Clean, readable, correct code is the primary standard. Optimize measured workloads without obscure machinery or unsafe code. Use explicit types for identities and source locations; explain invariants, not obvious statements. Keep source handling, syntax, analysis, workspace lifecycle and LSP transport separate.
 

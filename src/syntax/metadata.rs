@@ -83,7 +83,7 @@ pub fn parse(doc: &mut Document, header: &str) {
         doc.errors.push(SyntaxError::new(
             Span::new(0, 1.min(header.len())),
             "component-metadata",
-            "Expected a Gorak component metadata table.",
+            "Expected a gorak component metadata table.",
         ));
         return;
     };
