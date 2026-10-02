@@ -23,7 +23,7 @@ if cargo_home:
 flags = [f"--remap-path-prefix={source}={dest}" for source, dest in remaps]
 env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
 subprocess.run(["cargo", "build", "--locked", "--release", "--bin", "gorak-lsp-rs"], check=True, env=env)
-metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--locked", "--offline", "--format-version=1"]))
+metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--locked", "--format-version=1"]))
 nodes = {node["id"]: node for node in metadata["resolve"]["nodes"]}
 required = set()
 pending = [metadata["resolve"]["root"]]
