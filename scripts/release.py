@@ -21,6 +21,8 @@ cargo_home = env.get("CARGO_HOME")
 if cargo_home:
     remaps.append((cargo_home, "/build/cargo"))
 flags = [f"--remap-path-prefix={source}={dest}" for source, dest in remaps]
+if os.name == "nt":
+    flags.append("-Ctarget-feature=+crt-static")
 env["CARGO_ENCODED_RUSTFLAGS"] = "\x1f".join(flags)
 subprocess.run(["cargo", "build", "--locked", "--release", "--bin", "gorak-lsp-rs"], check=True, env=env)
 metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--locked", "--format-version=1"]))
