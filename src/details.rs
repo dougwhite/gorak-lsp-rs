@@ -47,6 +47,9 @@ impl Details {
             .map(|e| e.document.source.uri.to_string())
             .collect::<Vec<_>>();
         for uri in uris {
+            if engine.interrupted() {
+                anyhow::bail!("Request interrupted");
+            }
             self.load(engine, &uri)?;
         }
         Ok(())

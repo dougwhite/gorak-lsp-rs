@@ -225,6 +225,9 @@ impl Engine {
         }
         let mut family = HashSet::new();
         for (i, entry) in self.entries.iter().enumerate() {
+            if self.interrupted() {
+                return Err("Request interrupted".into());
+            }
             if entry.document.component_kind != "classsource"
                 || project(&entry.document.source.uri) != root_project
             {
@@ -254,6 +257,9 @@ impl Engine {
         let name = self.symbol(target).spelling.to_ascii_lowercase();
         let mut result = Vec::new();
         for (i, entry) in self.entries.iter().enumerate() {
+            if self.interrupted() {
+                return Err("Request interrupted".into());
+            }
             let id = DocumentId(i);
             let doc = &entry.document;
             if project(&doc.source.uri) != root {
@@ -296,6 +302,9 @@ impl Engine {
                 return Err("The proposed name collides with an inherited member.".into());
             }
             for (j, t) in doc.tokens.iter().enumerate() {
+                if j % 256 == 0 && self.interrupted() {
+                    return Err("Request interrupted".into());
+                }
                 if t.kind == Kind::String
                     && doc
                         .source
@@ -372,6 +381,9 @@ impl Engine {
         let name = parameter.spelling.to_ascii_lowercase();
         let mut result = Vec::new();
         for (i, entry) in self.entries.iter().enumerate() {
+            if self.interrupted() {
+                return Err("Request interrupted".into());
+            }
             let id = DocumentId(i);
             let doc = &entry.document;
             if project(&doc.source.uri) != root {
@@ -381,6 +393,9 @@ impl Engine {
                 return Err("Dynamic calls prevent complete parameter rename.".into());
             }
             for (j, t) in doc.tokens.iter().enumerate() {
+                if j % 256 == 0 && self.interrupted() {
+                    return Err("Request interrupted".into());
+                }
                 let word = if t.kind == Kind::Name {
                     doc.names.get(t.name)
                 } else {
