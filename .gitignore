@@ -1,0 +1,10 @@
+/target/
+/bench-results/
+*.cpuprofile
+.env
+__pycache__/
+*.py[cod]
+
+/release/
+.env
+*.log
