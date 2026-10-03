@@ -1,4 +1,4 @@
-//! Behavioural checks against the pinned canonical Gorak project.
+//! Behavioural checks against the pinned canonical gorak project.
 use gorak_lsp_rs::{
     analysis::Engine,
     source::{Position, Source},
@@ -19,9 +19,23 @@ fn project() -> PathBuf {
         .output()
         .expect("Git is required to verify the fixture pin");
     assert!(head.status.success());
-    assert_eq!(
-        String::from_utf8(head.stdout).unwrap().trim(),
+    let tag = format!(
+        "refs/tags/{}^{{commit}}",
         pin["gorak_revision"].as_str().unwrap()
+    );
+    let pinned = std::process::Command::new("git")
+        .arg("-C")
+        .arg(&checkout)
+        .args(["rev-parse", "--verify", &tag])
+        .output()
+        .expect("Git is required to resolve the fixture tag");
+    assert!(
+        pinned.status.success(),
+        "Run python scripts/fetch-compatibility.py before cargo test"
+    );
+    assert_eq!(
+        head.stdout, pinned.stdout,
+        "Fixture checkout must match the pinned tag"
     );
     let upstream: toml::Value = fs::read_to_string(checkout.join("ecosystem.toml"))
         .expect("Run python scripts/fetch-compatibility.py before cargo test")
