@@ -1,6 +1,6 @@
 # Synthetic behavioural oracle
 
-Shared Gorak source checks live in `tests/compatibility.rs`. Run
+Shared gorak source checks live in `tests/compatibility.rs`. Run
 `python scripts/fetch-compatibility.py` before `cargo test --locked` (Python 3.11+).
 `ecosystem.toml` pins the upstream revision and supported source contract. Update
 both through a PR and require Windows/Linux checks before accepting certification.
