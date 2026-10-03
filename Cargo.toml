@@ -1,6 +1,6 @@
 [package]
 name = "gorak-lsp-rs"
-version = "0.9.0-alpha.4"
+version = "0.9.0-alpha.5"
 edition = "2024"
 rust-version = "1.88"
 publish = false
