@@ -71,7 +71,10 @@ fn included_class_and_embedded_procedure_calls_resolve() {
     let definitions = engine.definitions(uri.as_str(), position(&text, "counter;"));
     assert_eq!(definitions.len(), 1);
     let expected = url::Url::from_file_path(root.join("shared/counter.w4gl")).unwrap();
-    assert_eq!(definitions[0].uri.as_ref(), expected.as_str());
+    assert_eq!(
+        definitions[0].uri.as_ref(),
+        gorak_lsp_rs::source::canonical_uri(expected.as_str()).as_str()
+    );
 
     let markup = root.join("example/panel.wml");
     let text = fs::read_to_string(&markup).unwrap();
@@ -79,7 +82,10 @@ fn included_class_and_embedded_procedure_calls_resolve() {
     let definitions = engine.definitions(uri.as_str(), position(&text, "score(capsules"));
     assert_eq!(definitions.len(), 1);
     let expected = url::Url::from_file_path(root.join("example/score.w4gl")).unwrap();
-    assert_eq!(definitions[0].uri.as_ref(), expected.as_str());
+    assert_eq!(
+        definitions[0].uri.as_ref(),
+        gorak_lsp_rs::source::canonical_uri(expected.as_str()).as_str()
+    );
     let source = fs::read_to_string(root.join("example/score.w4gl")).unwrap();
     assert_eq!(definitions[0].range.start, position(&source, "score("));
 }
