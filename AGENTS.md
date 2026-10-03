@@ -1,5 +1,7 @@
 # Native gorak language server
 
+Always spell `gorak` in lowercase, including at the start of sentences and in headings, documentation, UI text, commit messages, PR titles and release titles.
+
 Clean, readable, correct code is the primary standard. Optimize measured workloads without obscure machinery or unsafe code. Use explicit types for identities and source locations; explain invariants, not obvious statements. Keep source handling, syntax, analysis, workspace lifecycle and LSP transport separate.
 
 Run `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test` after changes. Release benchmarks must compare equivalent operations and disclose correctness gaps. Never treat missing analysis as a speed improvement.
