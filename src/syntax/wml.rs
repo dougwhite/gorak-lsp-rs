@@ -17,6 +17,7 @@ struct Piece {
 struct Projection {
     text: String,
     pieces: Vec<Piece>,
+    errors: Vec<SyntaxError>,
 }
 impl Projection {
     fn append(&mut self, text: &str, original: Span, literal: bool) {
@@ -64,6 +65,32 @@ fn project(raw: &str, base: usize) -> Projection {
                 true,
             );
             at = (end + 3).min(raw.len());
+            continue;
+        }
+        if raw[at..].starts_with("<?") {
+            let end = raw[at + 2..]
+                .find("?>")
+                .map_or(raw.len(), |i| at + 2 + i + 2);
+            let instruction = &raw[at + 2..end.saturating_sub(2)];
+            let mut parts = instruction.split_whitespace();
+            if parts.next() == Some("ingres_invalidxmlchar") {
+                let value = parts
+                    .next()
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .and_then(char::from_u32);
+                let span = Span::new(base + at, base + end);
+                if let Some(value) = value.filter(|_| parts.next().is_none()) {
+                    p.append(&value.to_string(), span, false);
+                } else {
+                    p.errors.push(SyntaxError::new(
+                        span,
+                        "invalid-wml-character",
+                        "Expected one Unicode scalar code point",
+                    ));
+                    p.append(" ", span, false);
+                }
+            }
+            at = end;
             continue;
         }
         if raw[at..].starts_with("<!--") {
@@ -131,17 +158,23 @@ pub fn parse(doc: &mut Document) {
             .and_then(|p| scopes.get(&p.id()).copied())
             .unwrap_or(0);
         let mut scope = parent;
-        if let Some(attr) = node.attribute_node("name") {
+        if let Some(attr) = node.attribute_node("gorak_style") {
+            let range = attr.range();
+            doc.errors.push(SyntaxError::new(
+                Span::new(range.start, range.end), "obsolete-wml-style",
+                "gorak_style is no longer supported; re-export this application with the current gorak CLI",
+            ));
+        }
+        if is_field(node)
+            && let Some(attr) = node.attribute_node("name")
+        {
             let name = attr.value();
             if !name.is_empty() && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
                 scope = doc.scope(parent, ScopeKind::Field);
                 let range = attr.range_value();
                 let span = Span::new(range.start, range.end);
                 let id = doc.declare(name, span, parent, SymbolKind::Field);
-                let mut ty = metadata::type_ref(
-                    doc,
-                    node.attribute("datatype").unwrap_or(node.tag_name().name()),
-                );
+                let mut ty = metadata::type_ref(doc, field_type(node));
                 if node.tag_name().name().eq_ignore_ascii_case("tablefield")
                     && let Some(t) = &mut ty
                 {
@@ -168,10 +201,56 @@ pub fn parse(doc: &mut Document) {
                 let base = range.start + open + 1;
                 let projection = project(&raw[open + 1..close], base);
                 parser::parse_region(doc, &projection.text, parent, &|span| projection.map(span));
+                doc.errors.extend(projection.errors);
             }
         }
     }
 }
+// Only native controls declare fields. Named tagged values, resources and other
+// metadata are not variables; their names must never enter rename/reference sets.
+fn is_field(node: roxmltree::Node<'_, '_>) -> bool {
+    let tag = node.tag_name().name();
+    tag.ends_with("field")
+        || matches!(
+            tag,
+            "topform"
+                | "subform"
+                | "flexibleform"
+                | "compositefield"
+                | "freetrim"
+                | "boxtrim"
+                | "segmentshape"
+                | "ellipseshape"
+                | "rectangleshape"
+                | "lineshape"
+                | "menubar"
+                | "menustack"
+                | "menubutton"
+                | "menutoggle"
+                | "menuseparator"
+        )
+}
+
+fn field_type<'a>(node: roxmltree::Node<'a, '_>) -> &'a str {
+    if let Some(datatype) = node.attribute("datatype") {
+        return datatype;
+    }
+    // A table column's value type belongs to its explicit prototype, not to the
+    // creation palette. Neither fieldstyle nor stylesheet defaults infer types.
+    if node.has_tag_name("columnfield")
+        && let Some(prototype) = node.children().find(|n| n.has_tag_name("protofield"))
+    {
+        return prototype
+            .attribute("datatype")
+            .or_else(|| prototype.attribute("type"))
+            .unwrap_or("formfield");
+    }
+    if node.has_tag_name("protofield") {
+        return node.attribute("type").unwrap_or("formfield");
+    }
+    node.tag_name().name()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

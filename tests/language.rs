@@ -540,3 +540,92 @@ fn filesystem_and_editor_uris_share_application_identity() {
     );
     assert!(engine.id(uri.as_str()).is_some());
 }
+
+#[test]
+fn explicit_frame_types_do_not_depend_on_native_style_association() {
+    let text = r#"<frame><topform><entryfield name="first" datatype="varchar(27)"/><entryfield name="unique_value" datatype="varchar(28)" fieldstyle="0"/><entryfield name="styled" datatype="varchar(29)" fieldstyle="2"/><tablefield name="rows"><columnfield name="caption"><protofield type="entryfield" datatype="varchar(42)"/></columnfield></tablefield><matrixfield name="grid"><entryfield name="cell" row="2" column="3" datatype="integer"/></matrixfield></topform></frame>"#;
+    let source = Source::new("file:///synthetic/app/main.wml", text).unwrap();
+    let doc = gorak_lsp_rs::syntax::parse(source);
+    assert!(doc.errors.is_empty(), "{:?}", doc.errors);
+    for (name, expected) in [
+        ("first", "VARCHAR(27)"),
+        ("unique_value", "VARCHAR(28)"),
+        ("styled", "VARCHAR(29)"),
+        ("caption", "VARCHAR(42)"),
+        ("cell", "INTEGER"),
+    ] {
+        let field = doc.symbols.iter().find(|s| s.spelling == name).unwrap();
+        assert!(
+            field
+                .ty
+                .as_ref()
+                .unwrap()
+                .display
+                .eq_ignore_ascii_case(expected)
+        );
+        assert_eq!(doc.source.slice(field.span), name);
+    }
+}
+
+#[test]
+fn named_metadata_and_inline_resources_do_not_become_fields() {
+    let payload = "A".repeat(3 * 1024 * 1024);
+    let text = format!(
+        r#"<frame><topform><entryfield name="amount" datatype="integer"/><taggedvalues><row name="metadata_only" value="amount"/></taggedvalues><bgbitmap name="resource_only" obj_encoded="{payload}"/><script>INITIALIZE = {{ MESSAGE amount; }}</script></topform></frame>"#
+    );
+    let uri = "file:///synthetic/app/main.wml";
+    let mut engine = Engine::default();
+    engine.update(uri, &text, 1).unwrap();
+    let definitions = engine.definitions(uri, position(&text, "amount;"));
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].range.start, position(&text, "amount\""));
+    let symbols = engine.document_symbols(uri).to_string();
+    assert!(!symbols.contains("metadata_only"));
+    assert!(!symbols.contains("resource_only"));
+    assert!(!symbols.contains(&"A".repeat(100)));
+}
+
+#[test]
+fn processing_instructions_preserve_utf16_navigation_and_rename_spans() {
+    let text = r#"<frame><entryfield name="amount" datatype="integer"/><script>INITIALIZE = { MESSAGE '🎈<?ingres_invalidxmlchar 7?>'; MESSAGE amount; }</script></frame>"#;
+    let uri = "file:///synthetic/app/main.wml";
+    let doc = gorak_lsp_rs::syntax::parse(Source::new(uri, text).unwrap());
+    assert!(doc.errors.is_empty(), "{:?}", doc.errors);
+    assert!(
+        !doc.tokens
+            .iter()
+            .any(|t| doc.source.slice(t.span) == "ingres_invalidxmlchar")
+    );
+    let mut engine = Engine::default();
+    engine.update(uri, text, 3).unwrap();
+    let definitions = engine.definitions(uri, position(text, "amount;"));
+    assert_eq!(definitions[0].range.start, position(text, "amount\""));
+    let refs = engine.references(uri, position(text, "amount;"), true, false);
+    assert_eq!(refs.len(), 2);
+    assert!(
+        refs.iter()
+            .any(|r| r.range.start == position(text, "amount;"))
+    );
+}
+
+#[test]
+fn malformed_character_pi_and_obsolete_style_selector_are_diagnosed() {
+    let text = r#"<frame><entryfield name="amount" gorak_style="1"/><script>INITIALIZE = { MESSAGE '<?ingres_invalidxmlchar 55296?>'; }</script></frame>"#;
+    let doc =
+        gorak_lsp_rs::syntax::parse(Source::new("file:///synthetic/app/main.wml", text).unwrap());
+    assert!(doc.errors.iter().any(|e| e.code == "invalid-wml-character"));
+    assert!(doc.errors.iter().any(|e| e.code == "obsolete-wml-style"));
+}
+
+#[test]
+fn creation_stylesheets_are_not_source_documents() {
+    use std::path::Path;
+    for path in [
+        "/synthetic/field_defaults.json",
+        "/synthetic/app/field_defaults.json",
+        "/synthetic/app/main.fielddefaults.json",
+    ] {
+        assert!(!gorak_lsp_rs::workspace::is_source(Path::new(path)));
+        assert!(gorak_lsp_rs::workspace::load(Path::new(path)).is_none());
+    }
+}

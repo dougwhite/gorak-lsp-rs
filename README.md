@@ -9,3 +9,5 @@ Alpha: analysis is incomplete and is not an OpenROAD compiler. Interactive reque
 Build with Rust 1.88+: `cargo test --locked`, then `python scripts/release.py`. Tag `v<version>` to test and publish an alpha release through GitHub Actions. Release packages include dependency notices; public API catalogue provenance is in [catalogue/PROVENANCE.md](catalogue/PROVENANCE.md).
 
 MIT licensed.
+
+Frame analysis uses explicit WML values, including typed column prototypes and native character processing instructions. Native stylesheet JSON is creation-palette data, not application declarations or a source of missing field properties.
