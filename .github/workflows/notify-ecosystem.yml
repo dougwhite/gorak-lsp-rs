@@ -1,0 +1,73 @@
+name: Notify ecosystem of dependency release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+    secrets:
+      ECOSYSTEM_DISPATCH_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag to notify again
+        required: true
+        type: string
+      notify:
+        description: Send notification (disable for read-only validation)
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify publication and notify the gorak coordinator
+        env:
+          SOURCE: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SEND: ${{ github.event_name != 'workflow_dispatch' || inputs.notify }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DISPATCH_TOKEN: ${{ secrets.ECOSYSTEM_DISPATCH_TOKEN }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from urllib.parse import quote
+          from urllib.request import Request, urlopen
+          source, tag = os.environ['SOURCE'], os.environ['TAG']
+          if source not in ('dougwhite/gorak-lsp-rs', 'dougwhite/gorak-frame-designer'):
+              raise ValueError('Unexpected dependency source')
+          if not re.fullmatch(r'v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', tag):
+              raise ValueError('Expected a versioned release tag')
+          headers = {'Authorization': 'Bearer ' + os.environ['GITHUB_TOKEN'], 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json', 'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'gorak-release-notification'}
+          url = 'https://api.github.com/repos/' + source + '/releases/tags/' + quote(tag, safe='')
+          with urlopen(Request(url, headers=headers), timeout=30) as response:
+              release = json.load(response)
+          required = {'release.json', 'SHA256SUMS'} if source.endswith('lsp-rs') else {'gorak-frame-designer-' + tag[1:] + '.tgz', 'SHA256SUMS'}
+          if release['draft'] or not required <= {asset['name'] for asset in release['assets']}:
+              raise ValueError('Release assets are not published yet')
+          if os.environ['SEND'] == 'true':
+              token = os.environ.get('DISPATCH_TOKEN')
+              if not token:
+                  raise ValueError('Configure ECOSYSTEM_DISPATCH_TOKEN for gorak Contents write access')
+              headers['Authorization'] = 'Bearer ' + token
+              payload = json.dumps({'event_type': 'gorak-dependency-released', 'client_payload': {'source': source, 'tag': tag}}).encode()
+              request = Request('https://api.github.com/repos/dougwhite/gorak/dispatches', data=payload, headers=headers, method='POST')
+              with urlopen(request, timeout=30) as response:
+                  if response.status != 204:
+                      raise ValueError('Dispatch was not accepted')
+              print('Notified gorak of ' + source + ' ' + tag)
+          else:
+              print('Validated publication without sending a notification')
+          PY
