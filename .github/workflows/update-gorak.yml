@@ -1,0 +1,64 @@
+name: Propose gorak update
+
+on:
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published gorak tag (blank selects the newest version, including alphas)'
+        type: string
+        default: ''
+      dry_run:
+        description: 'Preview without opening a PR'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: propose-gorak-update
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s scripts -p 'test_update_gorak.py'
+      - name: Prepare proposal
+        id: update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: python scripts/update_gorak.py --tag "$REQUESTED_TAG" --write --body "$RUNNER_TEMP/gorak-update-body.md"
+      - name: Require PR credentials
+        if: steps.update.outputs.changed == 'true' && inputs.dry_run != true
+        env:
+          PR_TOKEN: ${{ secrets.ECOSYSTEM_PR_TOKEN }}
+        run: |
+          if [ -z "$PR_TOKEN" ]; then
+            echo '::error::Set ECOSYSTEM_PR_TOKEN with Contents and Pull requests write access to this repository. See scripts/UPDATES.md.'
+            exit 1
+          fi
+      - name: Open compatibility PR
+        if: steps.update.outputs.changed == 'true' && inputs.dry_run != true
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7
+        with:
+          token: ${{ secrets.ECOSYSTEM_PR_TOKEN }}
+          add-paths: ecosystem.toml
+          branch: ${{ steps.update.outputs.branch }}
+          base: main
+          title: 'Test gorak ${{ steps.update.outputs.tag }} compatibility'
+          commit-message: 'Propose gorak ${{ steps.update.outputs.tag }} compatibility'
+          body-path: ${{ runner.temp }}/gorak-update-body.md

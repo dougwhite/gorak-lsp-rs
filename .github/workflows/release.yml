@@ -26,6 +26,7 @@ jobs:
       - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - run: rustup default stable
       - run: cargo fmt --check
+      - run: python -m unittest discover -s scripts -p 'test_update_gorak.py'
       - run: python scripts/fetch-compatibility.py
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
