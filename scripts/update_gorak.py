@@ -60,7 +60,7 @@ def api(endpoint: str, paginate: bool = False):
     args = ["gh", "api", endpoint]
     if paginate:
         args += ["--paginate", "--slurp"]
-    return json.loads(subprocess.check_output(args, text=True))
+    return json.loads(subprocess.check_output(args, encoding="utf-8"))
 
 
 def proposed_manifest(original: str, tag: str, upstream: str) -> tuple[str, int, int]:
@@ -140,7 +140,7 @@ def main() -> None:
     updated, old, new = proposed_manifest(original, tag, upstream)
     body = (
         f"Update gorak from `{current}` to [{tag}](https://github.com/{UPSTREAM}/releases/tag/{tag}).\n\n"
-        f"Source contract: `{old}` → `{new}`. "
+        f"Source contract: `{old}` to `{new}`. "
         + (
             "**Contract changed: review and adapt the language server before merging.**"
             if old != new

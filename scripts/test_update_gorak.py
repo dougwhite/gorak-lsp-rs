@@ -1,4 +1,5 @@
 import base64
+import io
 import os
 import tempfile
 import tomllib
@@ -148,6 +149,17 @@ class Proposal(unittest.TestCase):
             tomllib.loads((root / "ecosystem.toml").read_text()),
             {"source_version": 2, "gorak_revision": "v0.2.0"},
         )
+
+    def test_preview_on_windows_console_encoding(self):
+        with io.TextIOWrapper(io.BytesIO(), encoding="cp1252") as console:
+            with patch("sys.stdout", console):
+                root, _, outputs, _ = self.run_proposal(write=True)
+            console.flush()
+            self.assertIn("changed=true", outputs)
+            self.assertIn(
+                "Source contract: `1` to `2`.",
+                (root / "body.md").read_text(encoding="utf-8"),
+            )
 
     def test_existing_open_or_declined_proposals_left_alone(self):
         for state, branch in [
