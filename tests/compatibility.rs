@@ -163,12 +163,15 @@ fn frame_templates_keep_frame_bindings_and_utf16_locations() {
     let (mut engine, root) = load();
     let text = fs::read_to_string(root.join("example/panel.w4gl"))
         .unwrap()
+        // Git may already have checked the fixture out with CRLF on Windows.
+        .replace("\r\n", "\n")
         .replace("[framesource]", "# template 😀\n[frametemplate]")
         .replace(
             "current_count.value = 0;",
             "current_count.value = 0;\n    CALLFRAME template();\n    curexec.TopForm;",
         )
         .replace('\n', "\r\n");
+    assert!(!text.contains("\r\r\n"));
     let uri = url::Url::from_file_path(root.join("example/template.w4gl")).unwrap();
     engine.update(uri.as_str(), &text, 1).unwrap();
     let markup = fs::read_to_string(root.join("example/panel.wml")).unwrap();
