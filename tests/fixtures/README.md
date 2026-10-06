@@ -12,3 +12,10 @@ The differential test preserves definition and outline order. References, comple
 One documented representation difference is accepted: native call-expression diagnostic spans include the closing parenthesis. The test requires the same diagnostic count, message, severity, code, start position and all other fields, with precisely one extra end character for these captured calls. It cannot hide missing analysis or extra warnings.
 
 These cases test baseline behaviour; they do not prove full OpenROAD compiler compatibility. Independent Rust regression tests cover lifecycle, malformed input, caching and deliberate corrections beyond the baseline.
+
+Source contract 3 coverage includes image-bearing metadata without spurious symbols,
+query/PNG exclusion from workspace source loading, and frame-template navigation,
+frame context, and physical UTF-16 locations using a CRLF/non-BMP variant of the
+pinned public fixture. Binary assets must be filtered before reading source text.
+The parse-cache schema changes with frame-template semantics so old summaries are
+rebuilt. Query-expression navigation and native reconstruction remain out of scope.

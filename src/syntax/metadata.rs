@@ -7,6 +7,7 @@ use crate::source::Span;
 
 const COMPONENTS: &[&str] = &[
     "framesource",
+    "frametemplate",
     "classsource",
     "proc4glsource",
     "proc3glsource",
@@ -96,7 +97,7 @@ pub fn parse(doc: &mut Document, header: &str) {
     let component = doc.component.clone();
     let symbol_kind = match kind {
         "classsource" => SymbolKind::Class,
-        "framesource" => SymbolKind::Frame,
+        "framesource" | "frametemplate" => SymbolKind::Frame,
         "globsource" => SymbolKind::Variable,
         "constsource" => SymbolKind::Constant,
         _ => SymbolKind::Function,

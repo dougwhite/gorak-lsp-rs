@@ -60,8 +60,8 @@ fn load() -> (Engine, PathBuf) {
         if !path.is_file() {
             continue;
         }
-        let text = fs::read_to_string(path).unwrap();
         if path.file_name().unwrap() == "app.json" {
+            let text = fs::read_to_string(path).unwrap();
             engine
                 .graph
                 .set(path.parent().unwrap().to_string_lossy().into_owned(), &text);
@@ -69,6 +69,7 @@ fn load() -> (Engine, PathBuf) {
             path.extension().and_then(|s| s.to_str()),
             Some("w4gl" | "wml")
         ) {
+            let text = fs::read_to_string(path).unwrap();
             let uri = url::Url::from_file_path(path).unwrap();
             engine.update(uri.as_str(), &text, 1).unwrap();
         }
@@ -134,4 +135,89 @@ fn explicit_fields_and_character_instructions_preserve_source_locations() {
     let outline = engine.document_symbols(uri.as_str()).to_string();
     assert!(outline.contains("calculate"));
     assert!(outline.contains("click"));
+}
+
+#[test]
+fn image_metadata_does_not_create_language_symbols() {
+    let (engine, root) = load();
+    let path = root.join("shared/counter.w4gl");
+    let text = fs::read_to_string(&path).unwrap();
+    let uri = url::Url::from_file_path(path).unwrap();
+    let doc = gorak_lsp_rs::syntax::parse(Source::new(uri.as_str(), text.as_str()).unwrap());
+    assert!(doc.errors.is_empty(), "{:?}", doc.errors);
+    for name in ["src", "path", "mask", "id", "native-flags", "class_icons"] {
+        assert!(!doc.symbols.iter().any(|s| s.spelling == name), "{name}");
+    }
+    let definitions = engine.definitions(uri.as_str(), position(&text, "value +"));
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(definitions[0].range.start, position(&text, "value ="));
+    assert!(
+        engine
+            .definitions(uri.as_str(), position(&text, "builtin:class-icon"))
+            .is_empty()
+    );
+}
+
+#[test]
+fn frame_templates_keep_frame_bindings_and_utf16_locations() {
+    let (mut engine, root) = load();
+    let text = fs::read_to_string(root.join("example/panel.w4gl"))
+        .unwrap()
+        // Git may already have checked the fixture out with CRLF on Windows.
+        .replace("\r\n", "\n")
+        .replace("[framesource]", "# template 😀\n[frametemplate]")
+        .replace(
+            "current_count.value = 0;",
+            "current_count.value = 0;\n    CALLFRAME template();\n    curexec.TopForm;",
+        )
+        .replace('\n', "\r\n");
+    assert!(!text.contains("\r\r\n"));
+    let uri = url::Url::from_file_path(root.join("example/template.w4gl")).unwrap();
+    engine.update(uri.as_str(), &text, 1).unwrap();
+    let markup = fs::read_to_string(root.join("example/panel.wml")).unwrap();
+    let markup_uri = url::Url::from_file_path(root.join("example/template.wml")).unwrap();
+    engine.update(markup_uri.as_str(), &markup, 1).unwrap();
+    let target = engine.definitions(uri.as_str(), position(&text, "template();"));
+    assert_eq!(target.len(), 1);
+    assert_eq!(
+        target[0].uri.as_ref(),
+        gorak_lsp_rs::source::canonical_uri(uri.as_str()).as_str()
+    );
+    assert_eq!(target[0].range.start, position(&text, "frametemplate"));
+    assert!(
+        !engine
+            .definitions(uri.as_str(), position(&text, "TopForm"))
+            .is_empty()
+    );
+    let doc = gorak_lsp_rs::syntax::parse(Source::new(uri.as_str(), text.as_str()).unwrap());
+    assert!(doc.errors.is_empty(), "{:?}", doc.errors);
+    let frame = doc
+        .symbols
+        .iter()
+        .find(|s| s.spelling == "template")
+        .unwrap();
+    assert_eq!(frame.kind, gorak_lsp_rs::syntax::model::SymbolKind::Frame);
+    assert_eq!(doc.source.slice(frame.span), "frametemplate");
+    let definitions = engine.definitions(uri.as_str(), position(&text, "counter;"));
+    assert_eq!(definitions.len(), 1);
+    let definitions = engine.definitions(uri.as_str(), position(&text, "current_count.value"));
+    assert_eq!(definitions.len(), 1);
+    assert_eq!(
+        definitions[0].range.start,
+        position(&text, "current_count =")
+    );
+}
+
+#[test]
+fn workspace_ignores_query_sidecars_and_binary_assets() {
+    let root = project();
+    for relative in [
+        "shared/counter.queries.json",
+        "shared/images/counter.png",
+        "example/images/badge.png",
+    ] {
+        let path = root.join(relative);
+        assert!(path.is_file());
+        assert!(gorak_lsp_rs::workspace::load(&path).is_none());
+    }
 }

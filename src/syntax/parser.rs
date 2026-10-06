@@ -246,7 +246,9 @@ pub(super) fn parse_region(
             }
             doc.scopes[scope as usize].owner = Some(id);
             Some(id)
-        } else if kind == "initialize" && doc.component_kind == "framesource" {
+        } else if kind == "initialize"
+            && matches!(doc.component_kind.as_str(), "framesource" | "frametemplate")
+        {
             Some(SymbolId(0))
         } else {
             None
