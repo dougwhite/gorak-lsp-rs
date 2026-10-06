@@ -580,7 +580,7 @@ impl Engine {
             "curframe" => Some("FrameExec"),
             "curprocedure" => Some("ProcExec"),
             "curexec" => Some(match doc.component_kind.as_str() {
-                "framesource" => "FrameExec",
+                "framesource" | "frametemplate" => "FrameExec",
                 "classsource" => "MethodExec",
                 _ => "ProcExec",
             }),
