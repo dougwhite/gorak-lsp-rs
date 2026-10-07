@@ -131,7 +131,11 @@ impl Graph {
             });
         }
     }
-    pub fn insert(&mut self, app: Application) {
+    pub fn insert(&mut self, mut app: Application) {
+        // Native core precedes other direct includes, even in older metadata
+        // that explicitly lists it later.
+        app.includes
+            .sort_by_key(|edge| !edge.name.eq_ignore_ascii_case("core"));
         let key = (
             parent(&app.directory),
             basename(&app.directory).to_ascii_lowercase(),
@@ -209,6 +213,28 @@ impl Graph {
         }
         if let Some(issue) = self.hierarchy_issue(app) {
             return Lookup::blocked(issue);
+        }
+        // Published exports omit implicit core. Use available core source in
+        // this project, while an absent core remains the built-in API boundary.
+        let explicit_core = self.applications.get(app).is_some_and(|node| {
+            node.includes
+                .iter()
+                .any(|edge| edge.name.eq_ignore_ascii_case("core"))
+        });
+        if !explicit_core
+            && !basename(app).eq_ignore_ascii_case("core")
+            && qualifier.is_none_or(|q| q.eq_ignore_ascii_case("core"))
+        {
+            let sources = self.sources(app, "core");
+            if sources.len() > 1 {
+                return Lookup::blocked(LookupIssue::AmbiguousApplication);
+            }
+            if let Some(source) = sources.first() {
+                let found = candidates(source);
+                if !found.is_empty() || qualifier.is_some() {
+                    return Lookup::found(found);
+                }
+            }
         }
         if let Some(node) = self.applications.get(app) {
             for edge in &node.includes {

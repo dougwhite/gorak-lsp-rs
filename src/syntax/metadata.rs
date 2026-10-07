@@ -1,4 +1,4 @@
-//! TOML validates values; a separate physical-line pass locates authoring spans.
+//! Parsed TOML spans keep declarations separate from opaque member metadata.
 use super::{
     lexer::{Kind, Role, SyntaxError, Token},
     model::{Document, SymbolKind, TypeRef},
@@ -16,7 +16,7 @@ const COMPONENTS: &[&str] = &[
     "scriptsource",
     "ghostsource",
 ];
-pub fn type_ref(doc: &mut Document, text: &str) -> Option<TypeRef> {
+fn type_text(text: &str) -> (&str, bool) {
     let mut value = text.trim();
     while let Some((first, tail)) = value.split_once(char::is_whitespace) {
         if ["returning", "private", "public"]
@@ -35,7 +35,10 @@ pub fn type_ref(doc: &mut Document, text: &str) -> Option<TypeRef> {
         .filter(|(word, _)| word.eq_ignore_ascii_case("of"))
         .map(|(_, tail)| tail.trim_start());
     let array = element.is_some();
-    let value = element.unwrap_or(value);
+    (element.unwrap_or(value), array)
+}
+pub fn type_ref(doc: &mut Document, text: &str) -> Option<TypeRef> {
+    let (value, array) = type_text(text);
     let name_end = value
         .find(|c: char| !c.is_ascii_alphanumeric() && !"_#@$!".contains(c))
         .unwrap_or(value.len());
@@ -65,7 +68,7 @@ pub fn type_ref(doc: &mut Document, text: &str) -> Option<TypeRef> {
     })
 }
 pub fn parse(doc: &mut Document, header: &str) {
-    let value: toml::Value = match header.parse::<toml::Value>() {
+    let value = match toml_edit::ImDocument::parse(header) {
         Ok(v) => v,
         Err(e) => {
             let span = e.span().unwrap_or(0..header.len().min(1));
@@ -91,9 +94,13 @@ pub fn parse(doc: &mut Document, header: &str) {
     doc.component_kind = kind.into();
     doc.superclass = props
         .get("superclass")
-        .and_then(toml::Value::as_str)
+        .and_then(toml_edit::Item::as_str)
         .map(str::to_owned);
-    let start = header.find(kind).unwrap_or(0);
+    let start = value
+        .as_table()
+        .key(kind)
+        .and_then(|k| k.span())
+        .map_or(0, |s| s.start);
     let component = doc.component.clone();
     let symbol_kind = match kind {
         "classsource" => SymbolKind::Class,
@@ -110,7 +117,7 @@ pub fn parse(doc: &mut Document, header: &str) {
     );
     doc.symbol_mut(id).ty = props
         .get("datatype")
-        .and_then(toml::Value::as_str)
+        .and_then(toml_edit::Item::as_str)
         .and_then(|s| type_ref(doc, s));
     if kind == "constsource" {
         // Character constants preserve empty strings and distinguish them from missing values.
@@ -122,7 +129,7 @@ pub fn parse(doc: &mut Document, header: &str) {
         });
         doc.symbol_mut(id).constant_value = props
             .get("defaultstring")
-            .and_then(toml::Value::as_str)
+            .and_then(toml_edit::Item::as_str)
             .map(|value| {
                 if character {
                     format!("'{}'", value.replace('\'', "''"))
@@ -133,87 +140,122 @@ pub fn parse(doc: &mut Document, header: &str) {
             .or_else(|| {
                 props
                     .get("defaultvalue")
-                    .and_then(toml::Value::as_str)
+                    .and_then(toml_edit::Item::as_str)
                     .map(str::to_owned)
             });
     }
-    let mut section = "";
-    let mut offset = 0;
-    let mut multiline: Option<&str> = None;
-    for line in header.split_inclusive('\n') {
-        let trimmed = line.trim();
-        if let Some(quote) = multiline {
-            if line.contains(quote) {
-                multiline = None;
-            }
-            offset += line.len();
+    for section in ["attributes", "methods"] {
+        let Some(members) = value.get(section).and_then(toml_edit::Item::as_table_like) else {
             continue;
-        }
-        if trimmed.starts_with('[') && trimmed.ends_with(']') {
-            section = trimmed.trim_matches(['[', ']']);
-        } else if let Some((key, rhs)) = line.split_once('=') {
-            let key = key.trim().trim_matches(['\'', '"']);
-            if ["attributes", "methods"].contains(&section)
-                && let Some(raw) = value
-                    .get(section)
-                    .and_then(|v| v.get(key))
-                    .and_then(toml::Value::as_str)
-            {
-                let start = offset + line.find(key).unwrap_or(0);
-                let kind = if section == "methods" {
-                    SymbolKind::Method
-                } else {
-                    SymbolKind::Property
-                };
-                let id = doc.declare(key, Span::new(start, start + key.len()), 0, kind);
-                let datatype = if kind == SymbolKind::Method {
-                    raw.to_ascii_lowercase()
-                        .find("returning")
-                        .map(|at| &raw[at + 9..])
-                } else {
-                    Some(raw)
-                };
-                let ty = datatype.and_then(|s| type_ref(doc, s));
-                doc.symbol_mut(id).ty = ty;
-                doc.tokens.push(Token {
-                    span: doc.symbol(id).span,
-                    kind: Kind::Name,
-                    name: doc.symbol(id).name,
-                    role: Role::Value,
-                    scope: 0,
-                });
-                if let Some(datatype) = datatype {
-                    add_type_token(doc, line, offset, datatype);
+        };
+        for (name, member) in members.iter() {
+            let declaration = if member.as_str().is_some() {
+                Some(member)
+            } else {
+                member.get("declaration")
+            };
+            let Some(declaration) = declaration.filter(|d| d.as_str().is_some()) else {
+                continue;
+            };
+            let Some(range) = members.key(name).and_then(|k| k.span()) else {
+                continue;
+            };
+            let physical = &header[range.clone()];
+            let bare = physical.trim_matches(['\'', '"']);
+            if bare != name {
+                doc.errors.push(SyntaxError::new(
+                    Span::new(range.start, range.end),
+                    "metadata-identifier",
+                    "Escaped metadata identifiers do not support source-safe analysis.",
+                ));
+                continue;
+            }
+            let start = range.start + physical.find(bare).unwrap_or(0);
+            let kind = if section == "methods" {
+                SymbolKind::Method
+            } else {
+                SymbolKind::Property
+            };
+            let id = doc.declare(name, Span::new(start, start + name.len()), 0, kind);
+            let raw = declaration.as_str().unwrap();
+            // Defaults are not reference tokens, but a stored method name still
+            // prevents proving rename coverage, just like a script literal.
+            let lexed = super::lexer::lex(raw, 0, &mut doc.names);
+            for token in lexed.tokens.iter().filter(|t| t.kind == Kind::String) {
+                let literal = raw[token.span.start as usize..token.span.end as usize]
+                    .trim_matches(['\'', '"']);
+                if !literal.is_empty()
+                    && literal
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"_#@$".contains(&b))
+                {
+                    doc.facts.literal_names.insert(literal.to_ascii_lowercase());
                 }
             }
-            if section == doc.component_kind
-                && ["datatype", "superclass"].contains(&key)
-                && let Some(datatype) = props.get(key).and_then(toml::Value::as_str)
-            {
-                add_type_token(doc, line, offset, datatype);
-            }
-            for quote in ["\"\"\"", "'''"] {
-                let rhs = rhs.trim();
-                if rhs.starts_with(quote) && !rhs[3..].contains(quote) {
-                    multiline = Some(quote);
-                }
+            let datatype = if kind == SymbolKind::Method {
+                raw.to_ascii_lowercase()
+                    .find("returning")
+                    .map(|at| &raw[at + 9..])
+            } else {
+                Some(raw)
+            };
+            doc.symbol_mut(id).ty = datatype.and_then(|s| type_ref(doc, s));
+            doc.tokens.push(Token {
+                span: doc.symbol(id).span,
+                kind: Kind::Name,
+                name: doc.symbol(id).name,
+                role: Role::Value,
+                scope: 0,
+            });
+            if let Some(datatype) = datatype {
+                add_type_token(doc, header, declaration, datatype);
             }
         }
-        offset += line.len();
+    }
+    for key in ["datatype", "superclass"] {
+        if let Some(item) = props.get(key)
+            && let Some(datatype) = item.as_str()
+        {
+            add_type_token(doc, header, item, datatype);
+        }
     }
 }
-fn add_type_token(doc: &mut Document, line: &str, offset: usize, datatype: &str) {
+
+fn add_type_token(doc: &mut Document, header: &str, item: &toml_edit::Item, datatype: &str) {
     let Some(ty) = type_ref(doc, datatype) else {
         return;
     };
-    let Some(equal) = line.find('=') else {
+    let Some(range) = item.span() else {
         return;
     };
+    let raw = &header[range.clone()];
+    let Some(decoded) = item.as_str() else {
+        return;
+    };
+    // Match only the declaration prefix through the type. Escapes in a
+    // default literal must not hide an otherwise literal type reference.
+    let (type_text, _) = type_text(datatype);
+    let trailing = decoded.len() - decoded.trim_end().len();
+    let offset = decoded.len() - trailing - type_text.len();
     let name = doc.names.get(ty.name);
-    let Some(at) = line[equal + 1..].to_ascii_lowercase().find(name) else {
-        return;
+    let prefix = &decoded[..offset + name.len()];
+    let quotes = if raw.starts_with("\"\"\"") || raw.starts_with("'''") {
+        3
+    } else {
+        1
     };
-    let start = offset + equal + 1 + at;
+    let mut content = quotes;
+    if quotes == 3 {
+        if raw[content..].starts_with("\r\n") {
+            content += 2;
+        } else if raw[content..].starts_with('\n') {
+            content += 1;
+        }
+    }
+    if !raw[content..].starts_with(prefix) {
+        return;
+    }
+    let start = range.start + content + offset;
     if let Some((application, component)) = name.split_once('!') {
         let application = application.to_owned();
         let component = component.to_owned();
