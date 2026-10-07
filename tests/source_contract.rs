@@ -98,6 +98,16 @@ METHOD inspect() = { self.obtainRecord(); }
             .rename(uri, at(&text, "slot$value;"), "other")
             .is_err()
     );
+    let stored = text.replace(
+        "PRIVATE VARCHAR(40) NOT NULL DEFAULT '  '",
+        "PRIVATE VARCHAR(40) NOT NULL DEFAULT 'obtainRecord'",
+    );
+    engine.update(uri, &stored, 18).unwrap();
+    assert!(
+        engine
+            .rename(uri, at(&stored, "obtainRecord();"), "retrieve")
+            .is_err()
+    );
     let dynamic = text.replace(
         "self.obtainRecord();",
         "self.obtainRecord(); self.:method_name();",

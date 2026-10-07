@@ -178,6 +178,20 @@ pub fn parse(doc: &mut Document, header: &str) {
             };
             let id = doc.declare(name, Span::new(start, start + name.len()), 0, kind);
             let raw = declaration.as_str().unwrap();
+            // Defaults are not reference tokens, but a stored method name still
+            // prevents proving rename coverage, just like a script literal.
+            let lexed = super::lexer::lex(raw, 0, &mut doc.names);
+            for token in lexed.tokens.iter().filter(|t| t.kind == Kind::String) {
+                let literal = raw[token.span.start as usize..token.span.end as usize]
+                    .trim_matches(['\'', '"']);
+                if !literal.is_empty()
+                    && literal
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"_#@$".contains(&b))
+                {
+                    doc.facts.literal_names.insert(literal.to_ascii_lowercase());
+                }
+            }
             let datatype = if kind == SymbolKind::Method {
                 raw.to_ascii_lowercase()
                     .find("returning")
