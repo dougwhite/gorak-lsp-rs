@@ -195,6 +195,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "toml",
+ "toml_edit",
  "url",
  "walkdir",
 ]

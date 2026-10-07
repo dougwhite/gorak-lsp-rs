@@ -165,7 +165,8 @@ fn frame_templates_keep_frame_bindings_and_utf16_locations() {
         .unwrap()
         // Git may already have checked the fixture out with CRLF on Windows.
         .replace("\r\n", "\n")
-        .replace("[framesource]", "# template 😀\n[frametemplate]")
+        .replace("framesource", "frametemplate")
+        .replacen("[frametemplate]", "# template 😀\n[frametemplate]", 1)
         .replace(
             "current_count.value = 0;",
             "current_count.value = 0;\n    CALLFRAME template();\n    curexec.TopForm;",
