@@ -444,6 +444,13 @@ impl Server {
                 "rssBytes": rss_bytes()
             }));
         }
+        if method == "gorak/componentCatalogue" {
+            return Ok(json!(crate::analysis::ComponentCatalogue {
+                components: self.engine.component_catalogue(),
+                indexing: !self.complete,
+                failures: self.failures,
+            }));
+        }
         if method == "gorak/builtinSource" {
             return Ok(json!(
                 self.engine
