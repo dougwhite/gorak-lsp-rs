@@ -267,9 +267,7 @@ pub(super) fn parse_region(
             map,
         );
         if kind == "on" {
-            for token in &mut tokens[begin + 1..head_end] {
-                token.role = Role::Label;
-            }
+            classify_event_targets(doc, &mut tokens[begin + 1..head_end], parent);
         }
     }
     classify_arguments(doc, tokens);
@@ -279,6 +277,40 @@ pub(super) fn parse_region(
         doc.tokens.push(token);
     }
 }
+// Event names are labels; explicit field targets belong to the containing frame,
+// not the handler's local declarations. Accept only complete dotted field paths.
+fn classify_event_targets(doc: &Document, tokens: &mut [Token], parent: u32) {
+    for token in tokens.iter_mut() {
+        token.role = Role::Label;
+    }
+    for event in tokens.split_mut(|token| token.kind == Kind::Punct(b',')) {
+        let start = usize::from(event.first().is_some_and(|t| word(doc, t) == "on"));
+        let Some(name) = event.get(start) else {
+            continue;
+        };
+        if name.kind != Kind::Name || word(doc, name) == "userevent" {
+            continue;
+        }
+        let target = &mut event[start + 1..];
+        if target.is_empty() || target.len() % 2 == 0 {
+            continue;
+        }
+        if !target.iter().enumerate().all(|(i, token)| {
+            if i % 2 == 0 {
+                token.kind == Kind::Name
+            } else {
+                token.kind == Kind::Punct(b'.')
+            }
+        }) {
+            continue;
+        }
+        for token in target {
+            token.role = Role::Value;
+            token.scope = parent;
+        }
+    }
+}
+
 struct DeclarationContext {
     start: usize,
     end: usize,
