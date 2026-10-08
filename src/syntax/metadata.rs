@@ -15,6 +15,8 @@ const COMPONENTS: &[&str] = &[
     "constsource",
     "scriptsource",
     "ghostsource",
+    "extlibsource",
+    "fieldtemplate",
 ];
 fn type_text(text: &str) -> (&str, bool) {
     let mut value = text.trim();
@@ -92,6 +94,10 @@ pub fn parse(doc: &mut Document, header: &str) {
         return;
     };
     doc.component_kind = kind.into();
+    // These catalogue components do not declare callable language symbols.
+    if matches!(kind, "extlibsource" | "fieldtemplate") {
+        return;
+    }
     doc.superclass = props
         .get("superclass")
         .and_then(toml_edit::Item::as_str)
