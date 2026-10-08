@@ -71,6 +71,23 @@ fn named_tab_pages_are_field_scopes_but_unrelated_rows_are_not() {
             .definitions(frame_uri, position(frame, "metadata\""))
             .is_empty()
     );
+    let named_frame = frame
+        .replace("<tabfolder>", "<tabbar name=\"tabs\">")
+        .replace("</tabfolder>", "</tabbar>");
+    let named_script = script
+        .replace("address.caption", "tabs.address.caption")
+        .replace("billing.caption", "tabs.billing.caption");
+    let named_frame = named_frame
+        .replace("<row name=\"address\">", "<tabpage name=\"address\">")
+        .replacen("</row>", "</tabpage>", 1);
+    engine.update(frame_uri, &named_frame, 2).unwrap();
+    engine.update(script_uri, &named_script, 2).unwrap();
+    assert_eq!(
+        engine.definitions(script_uri, position(&named_script, "caption ="))[0]
+            .range
+            .start,
+        position(&named_frame, "caption\"")
+    );
 }
 
 #[test]

@@ -219,6 +219,8 @@ fn is_field(node: roxmltree::Node<'_, '_>) -> bool {
             tag,
             "topform"
                 | "tabfolder"
+                | "tabbar"
+                | "tabpage"
                 | "subform"
                 | "flexibleform"
                 | "compositefield"
