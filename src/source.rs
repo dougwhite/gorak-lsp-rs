@@ -189,7 +189,22 @@ pub fn canonical_uri(uri: &str) -> String {
     let Ok(path) = url.to_file_path() else {
         return uri.to_owned();
     };
-    let path = std::fs::canonicalize(&path).unwrap_or(path);
+    // Deleted files still need the same parent spelling as their indexed URI.
+    let mut ancestor = path.as_path();
+    let mut missing = Vec::new();
+    let path = loop {
+        if let Ok(mut canonical) = std::fs::canonicalize(ancestor) {
+            for part in missing.iter().rev() {
+                canonical.push(part);
+            }
+            break canonical;
+        }
+        let (Some(parent), Some(name)) = (ancestor.parent(), ancestor.file_name()) else {
+            break path.clone();
+        };
+        missing.push(name);
+        ancestor = parent;
+    };
     let Ok(mut url) = url::Url::from_file_path(path) else {
         return uri.to_owned();
     };
@@ -227,6 +242,23 @@ mod tests {
             }),
             1
         );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn deleted_file_keeps_canonical_parent_spelling() {
+        let directory = tempfile::tempdir().unwrap();
+        let app = directory.path().join("MixedCaseApplication");
+        std::fs::create_dir(&app).unwrap();
+        let path = app.join("panel.wml");
+        std::fs::write(&path, "<frame/>").unwrap();
+        let uri = url::Url::from_file_path(&path).unwrap();
+        let indexed = canonical_uri(uri.as_str());
+        std::fs::remove_file(&path).unwrap();
+        let watcher_path =
+            std::path::PathBuf::from(app.to_string_lossy().to_uppercase()).join("panel.wml");
+        let watcher = url::Url::from_file_path(watcher_path).unwrap();
+        assert_eq!(canonical_uri(watcher.as_str()), indexed);
+        assert_eq!(canonical_uri(uri.as_str()), indexed);
     }
     #[test]
     fn edits_use_utf16_not_bytes() {
