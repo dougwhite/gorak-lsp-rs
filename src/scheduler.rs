@@ -56,14 +56,20 @@ struct State {
 fn priority(method: &str) -> u8 {
     match method {
         "shutdown" | "gorak/indexStatus" => 0,
-        "textDocument/references" | "textDocument/rename" | "workspace/symbol" => 2,
+        "textDocument/references"
+        | "textDocument/rename"
+        | "workspace/symbol"
+        | "gorak/componentCatalogue" => 2,
         _ => 1,
     }
 }
 fn needs_index(method: &str) -> bool {
     matches!(
         method,
-        "textDocument/references" | "textDocument/rename" | "workspace/symbol"
+        "textDocument/references"
+            | "textDocument/rename"
+            | "workspace/symbol"
+            | "gorak/componentCatalogue"
     )
 }
 fn invalidates(method: &str) -> bool {

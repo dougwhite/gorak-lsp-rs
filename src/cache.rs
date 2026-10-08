@@ -12,7 +12,7 @@ use std::{
 };
 
 // Increment whenever parsing or serialized model semantics change.
-const SCHEMA: &str = "native-parse-v18";
+const SCHEMA: &str = "native-parse-v19";
 const MAX_CACHE_BYTES: u64 = 128 * 1024 * 1024;
 #[derive(Serialize, Deserialize)]
 struct Record {

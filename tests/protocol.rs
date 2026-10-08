@@ -219,3 +219,151 @@ fn metadata_overlay_survives_rebuild_and_close_restores_disk_graph() {
     );
     shutdown(&client, worker);
 }
+
+#[test]
+fn component_catalogue_tracks_disk_overlay_and_workspace_lifecycle() {
+    let directory = tempfile::tempdir().unwrap();
+    let first = directory.path().join("first");
+    let second = directory.path().join("second");
+    for root in [&first, &second] {
+        std::fs::create_dir_all(root.join("app")).unwrap();
+        std::fs::write(root.join("app/panel.w4gl"), "[framesource]\n===").unwrap();
+        std::fs::write(root.join("app/panel.wml"), "<frame/>").unwrap();
+    }
+    std::fs::create_dir(second.join("empty")).unwrap();
+    std::fs::write(second.join("empty/app.json"), "{}").unwrap();
+    let folder = |path: &std::path::Path| json!({"uri":url::Url::from_directory_path(path).unwrap().to_string(),"name":"project"});
+    let (client, server) = Connection::memory();
+    let worker = std::thread::spawn(move || gorak_lsp_rs::server::serve(&server));
+    request(
+        &client,
+        1,
+        "initialize",
+        json!({"capabilities":{},"workspaceFolders":[folder(&first),folder(&second)]}),
+    );
+    notify(&client, "initialized", json!({}));
+    let result = request(&client, 2, "gorak/componentCatalogue", json!({}));
+    assert_eq!(result["indexing"], false);
+    assert_eq!(result["failures"], 0);
+    assert_eq!(result["components"].as_array().unwrap().len(), 2);
+    assert_eq!(result["applications"].as_array().unwrap().len(), 3);
+    assert!(
+        result["applications"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|app| app["name"] == "empty")
+    );
+    for component in result["components"].as_array().unwrap() {
+        assert!(
+            result["applications"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|app| app["uri"] == component["applicationUri"]
+                    && app["projectUri"] == component["projectUri"]),
+            "Application inventory must share component URI identity: {result}"
+        );
+    }
+    assert_ne!(result["components"][0]["id"], result["components"][1]["id"]);
+    let uri = url::Url::from_file_path(first.join("app/panel.w4gl"))
+        .unwrap()
+        .to_string();
+    notify(
+        &client,
+        "textDocument/didOpen",
+        json!({"textDocument":{"uri":uri,"languageId":"openroad","version":1,"text":"[frametemplate]\n==="}}),
+    );
+    let result = request(&client, 3, "gorak/componentCatalogue", json!({}));
+    assert!(
+        result["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["componentType"] == "frametemplate")
+    );
+    notify(
+        &client,
+        "textDocument/didClose",
+        json!({"textDocument":{"uri":uri}}),
+    );
+    let result = request(&client, 4, "gorak/componentCatalogue", json!({}));
+    assert!(
+        result["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["componentType"] == "framesource")
+    );
+    std::fs::remove_file(first.join("app/panel.wml")).unwrap();
+    notify(
+        &client,
+        "workspace/didChangeWatchedFiles",
+        json!({"changes":[{"uri":url::Url::from_file_path(first.join("app/panel.wml")).unwrap().to_string(),"type":3}]}),
+    );
+    let result = request(&client, 5, "gorak/componentCatalogue", json!({}));
+    assert_eq!(
+        result["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c.get("frameUri").is_none())
+            .count(),
+        1
+    );
+    notify(
+        &client,
+        "textDocument/didOpen",
+        json!({"textDocument":{"uri":uri,"languageId":"openroad","version":2,"text":"[frametemplate]\n==="}}),
+    );
+    let empty_manifest = second.join("empty/app.json");
+    std::fs::remove_file(&empty_manifest).unwrap();
+    notify(
+        &client,
+        "workspace/didChangeWatchedFiles",
+        json!({"changes":[{"uri":url::Url::from_file_path(&empty_manifest).unwrap().to_string(),"type":3}]}),
+    );
+    let result = request(&client, 7, "gorak/componentCatalogue", json!({}));
+    assert_eq!(result["applications"].as_array().unwrap().len(), 2);
+    assert!(
+        result["applications"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|app| app["name"] != "empty")
+    );
+    assert!(
+        result["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|component| component["componentType"] == "frametemplate")
+    );
+    notify(
+        &client,
+        "textDocument/didClose",
+        json!({"textDocument":{"uri":uri}}),
+    );
+    std::fs::write(&empty_manifest, "{}").unwrap();
+    notify(
+        &client,
+        "workspace/didChangeWatchedFiles",
+        json!({"changes":[{"uri":url::Url::from_file_path(&empty_manifest).unwrap().to_string(),"type":1}]}),
+    );
+    let result = request(&client, 8, "gorak/componentCatalogue", json!({}));
+    assert_eq!(result["applications"].as_array().unwrap().len(), 3);
+    notify(
+        &client,
+        "workspace/didChangeWorkspaceFolders",
+        json!({"event":{"added":[],"removed":[folder(&second)]}}),
+    );
+    let result = request(&client, 6, "gorak/componentCatalogue", json!({}));
+    assert_eq!(result["components"].as_array().unwrap().len(), 1);
+    assert_eq!(result["applications"].as_array().unwrap().len(), 1);
+    assert_eq!(result["applications"][0]["name"], "app");
+    assert_eq!(
+        result["components"][0]["sourceUri"],
+        gorak_lsp_rs::source::canonical_uri(uri.as_str())
+    );
+    shutdown(&client, worker);
+}
