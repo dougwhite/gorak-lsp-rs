@@ -211,9 +211,14 @@ pub fn parse(doc: &mut Document) {
 fn is_field(node: roxmltree::Node<'_, '_>) -> bool {
     let tag = node.tag_name().name();
     tag.ends_with("field")
+        || (tag == "row"
+            && node
+                .parent_element()
+                .is_some_and(|parent| parent.has_tag_name("tabpagearray")))
         || matches!(
             tag,
             "topform"
+                | "tabfolder"
                 | "subform"
                 | "flexibleform"
                 | "compositefield"
