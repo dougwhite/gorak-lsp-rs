@@ -18,15 +18,51 @@ pub struct Component {
     pub frame_uri: Option<String>,
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogueApplication {
+    pub uri: String,
+    pub project_uri: String,
+    pub name: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ComponentCatalogue {
+    pub applications: Vec<CatalogueApplication>,
     pub components: Vec<Component>,
     pub indexing: bool,
     pub failures: usize,
 }
 
 impl Engine {
+    pub fn application_catalogue(&self) -> Vec<CatalogueApplication> {
+        let mut applications = Vec::new();
+        for application in self.graph.applications.values() {
+            if self.interrupted() {
+                return Vec::new();
+            }
+            let path = std::path::Path::new(&application.directory);
+            let Ok(uri) = url::Url::from_directory_path(path) else {
+                continue;
+            };
+            let Ok(project_uri) = uri.join("../") else {
+                continue;
+            };
+            applications.push(CatalogueApplication {
+                uri: uri.into(),
+                project_uri: project_uri.into(),
+                name: path
+                    .file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
+            });
+        }
+        applications.sort_by(|a, b| a.uri.cmp(&b.uri));
+        applications
+    }
+
     pub fn component_catalogue(&self) -> Vec<Component> {
         let mut components = BTreeMap::<String, Component>::new();
         for entry in &self.entries {

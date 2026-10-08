@@ -446,6 +446,7 @@ impl Server {
         }
         if method == "gorak/componentCatalogue" {
             return Ok(json!(crate::analysis::ComponentCatalogue {
+                applications: self.engine.application_catalogue(),
                 components: self.engine.component_catalogue(),
                 indexing: !self.complete,
                 failures: self.failures,
@@ -668,10 +669,8 @@ impl Server {
         };
         if !path.try_exists()? {
             if path.file_name().is_some_and(|name| name == "app.json") {
-                self.engine
-                    .graph
-                    .set(crate::analysis::index::application(uri), "{}");
-                self.engine.invalidate_expansions();
+                // Re-discover empty applications without retaining deleted metadata nodes.
+                self.restart(false)?;
             } else {
                 self.engine.remove(uri);
             }

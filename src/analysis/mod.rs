@@ -17,4 +17,4 @@ pub(crate) use cancellation::Cancellation;
 pub(crate) use queries::ReferenceSearch;
 
 mod catalogue;
-pub use catalogue::{Component, ComponentCatalogue};
+pub use catalogue::{CatalogueApplication, Component, ComponentCatalogue};
