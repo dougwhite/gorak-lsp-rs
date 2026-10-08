@@ -205,16 +205,21 @@ pub fn canonical_uri(uri: &str) -> String {
         missing.push(name);
         ancestor = parent;
     };
-    let Ok(mut url) = url::Url::from_file_path(path) else {
+    let Ok(url) = url::Url::from_file_path(path) else {
         return uri.to_owned();
     };
+    normalize_file_uri(url).into()
+}
+
+/// URI construction uppercases Windows drive letters; indexed identities use lowercase.
+pub(crate) fn normalize_file_uri(mut url: url::Url) -> url::Url {
     let path = url.path();
-    if path.as_bytes().get(2) == Some(&b':') {
+    if cfg!(windows) && path.as_bytes().get(2) == Some(&b':') {
         let mut path = path.to_owned();
         path.replace_range(1..2, &path[1..2].to_ascii_lowercase());
         url.set_path(&path);
     }
-    url.into()
+    url
 }
 
 #[cfg(test)]

@@ -261,7 +261,8 @@ fn component_catalogue_tracks_disk_overlay_and_workspace_lifecycle() {
                 .unwrap()
                 .iter()
                 .any(|app| app["uri"] == component["applicationUri"]
-                    && app["projectUri"] == component["projectUri"])
+                    && app["projectUri"] == component["projectUri"]),
+            "Application inventory must share component URI identity: {result}"
         );
     }
     assert_ne!(result["components"][0]["id"], result["components"][1]["id"]);

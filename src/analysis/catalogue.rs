@@ -46,6 +46,7 @@ impl Engine {
             let Ok(uri) = url::Url::from_directory_path(path) else {
                 continue;
             };
+            let uri = crate::source::normalize_file_uri(uri);
             let Ok(project_uri) = uri.join("../") else {
                 continue;
             };
