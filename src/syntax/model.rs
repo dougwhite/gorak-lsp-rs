@@ -168,9 +168,19 @@ impl Document {
     }
     pub fn token_at(&self, byte: u32) -> Option<usize> {
         let at = self.tokens.partition_point(|t| t.span.start <= byte);
-        at.checked_sub(1).filter(|&i| {
-            self.tokens[i].span.end >= byte && self.tokens[i].kind == super::lexer::Kind::Name
-        })
+        let current = at.checked_sub(1)?;
+        let token = &self.tokens[current];
+        if token.kind == super::lexer::Kind::Name && token.span.end >= byte {
+            return Some(current);
+        }
+        // A forward selection ends at the next punctuation's start. Keep that
+        // shared boundary navigable without crossing whitespace or another name.
+        if token.span.start == byte && matches!(token.kind, super::lexer::Kind::Punct(_)) {
+            return current.checked_sub(1).filter(|&i| {
+                self.tokens[i].kind == super::lexer::Kind::Name && self.tokens[i].span.end == byte
+            });
+        }
+        None
     }
     pub fn canonical(&self, id: SymbolId) -> SymbolId {
         self.symbol(id).canonical
