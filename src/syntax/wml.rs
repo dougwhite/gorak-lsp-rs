@@ -152,7 +152,14 @@ pub fn parse(doc: &mut Document) {
     let component = doc.component.clone();
     doc.declare(&component, Span::default(), 0, SymbolKind::Frame);
     let mut scopes = HashMap::new();
-    for node in tree.descendants().filter(|n| n.is_element()) {
+    // frmflow stores native query/template metadata. Its descendants can use
+    // control and script tag names, but never declare executable WML source.
+    for node in tree.descendants().filter(|n| {
+        n.is_element()
+            && !n.ancestors().any(|ancestor| {
+                ancestor.is_element() && ancestor.tag_name().name().eq_ignore_ascii_case("frmflow")
+            })
+    }) {
         let parent = node
             .parent()
             .and_then(|p| scopes.get(&p.id()).copied())
