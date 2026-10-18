@@ -10,4 +10,4 @@ Build with Rust 1.88+: `cargo test --locked`, then `python scripts/release.py`. 
 
 MIT licensed.
 
-Frame analysis uses explicit WML values, including typed column prototypes and native character processing instructions. Native stylesheet JSON is creation-palette data, not application declarations or a source of missing field properties.
+Frame analysis uses explicit WML values, including typed column prototypes and native character processing instructions. The native `frmflow` query/template graph stays opaque to language analysis and rename edits. Native stylesheet JSON is creation-palette data, not application declarations or a source of missing field properties.

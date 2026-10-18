@@ -309,3 +309,112 @@ fn core_ambiguity_and_own_application_precedence_remain_explicit() {
     assert_eq!(own.candidates, vec![1]);
     assert!(own.issues.is_empty());
 }
+
+#[test]
+fn frmflow_graph_is_opaque_to_language_analysis_and_versioned_edits() {
+    let uri = "file:///contract/app/query_view.wml";
+    // Authored here independently: native query metadata may contain names and
+    // element spellings that resemble executable WML. None is authoring code.
+    let graph = r#"<frmflow>
+<query><name>query_view.M</name><erinfo><tabledefs>
+<row oid="21"><name>inventory</name><columns>
+<row oid="22"><name>counter</name><dbtypecode>30</dbtypecode></row>
+<row_class>tblcol</row_class></columns></row>
+<row_class>tabledef</row_class></tabledefs></erinfo>
+<rescols><row><expression>trim(counter) + 'Größe 😀 &amp; Maß'
+ + 'METHOD counterfeit() = { counter = 99; }'</expression>
+<name>counter</name><tblcol oidref="22"/><tabdef oidref="21"/></row>
+<row><name>counter</name><tblcol oidref="22"/><tabdef oidref="21"/></row>
+<row_class>resultcolumn</row_class></rescols>
+<frame><name>query_view</name><template>inventory_template</template>
+<entryfield name="metadata_field"><script><![CDATA[METHOD counterfeit() = { counter = 99; }]]></script></entryfield>
+</frame></query><framenum>1</framenum></frmflow>"#;
+    for metadata in [
+        graph,
+        "<frmflow/>",
+        "<frmflow><row_class>menufield</row_class></frmflow>",
+        "<frmflow>opaque Größe 😀</frmflow>",
+    ] {
+        let text = format!(
+            "<frame>{metadata}<topform><entryfield name=\"visible\" datatype=\"integer\"/>\n<script><![CDATA[PROCEDURE recalculate() = DECLARE counter = INTEGER; {{ MESSAGE '😀'; counter = 2; visible = counter; }}]]></script></topform></frame>"
+        ).replace('\n', "\r\n");
+        let mut engine = Engine::default();
+        engine.update(uri, &text, 23).unwrap();
+        let doc = gorak_lsp_rs::syntax::parse(Source::new(uri, text.as_str()).unwrap());
+        assert!(doc.errors.is_empty(), "{:?}", doc.errors);
+        let metadata_start = text.find("<frmflow").unwrap();
+        let metadata_end = if metadata.contains("</frmflow>") {
+            text.find("</frmflow>").unwrap() + "</frmflow>".len()
+        } else {
+            metadata_start + "<frmflow/>".len()
+        };
+        assert!(
+            !doc.symbols
+                .iter()
+                .any(|s| matches!(s.spelling.as_str(), "metadata_field" | "counterfeit"))
+        );
+        assert!(doc.tokens.iter().all(
+            |t| t.span.end as usize <= metadata_start || t.span.start as usize >= metadata_end
+        ));
+        assert_eq!(engine.diagnostics(uri), serde_json::json!([]));
+        assert_eq!(doc.blocks.len(), 1);
+        let source = Source::new(uri, text.as_str()).unwrap();
+        let usage = at(&text, "counter = 2");
+        let definitions = engine.definitions(uri, usage);
+        assert_eq!(definitions.len(), 1);
+        assert_eq!(definitions[0].range.start, at(&text, "counter = INTEGER"));
+        // The emoji preceding this use occupies two UTF-16 code units.
+        let byte = text.find("counter = 2").unwrap();
+        let line_start = text[..byte].rfind('\n').map_or(0, |p| p + 1);
+        assert_eq!(
+            usage.character as usize,
+            text[line_start..byte].encode_utf16().count()
+        );
+        let refs = engine.references(uri, usage, true, false);
+        assert_eq!(refs.len(), 3);
+        for location in refs {
+            assert!(source.offset(location.range.start) as usize >= metadata_end);
+        }
+        let edits = engine.rename(uri, usage, "tally").unwrap();
+        let change = &edits["documentChanges"][0];
+        assert_eq!(change["textDocument"]["version"], 23);
+        let mut replacements = change["edits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|edit| {
+                let range: Range = serde_json::from_value(edit["range"].clone()).unwrap();
+                (
+                    source.offset(range.start) as usize,
+                    source.offset(range.end) as usize,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(replacements.len(), 3);
+        replacements.sort_unstable_by(|a, b| b.cmp(a));
+        let mut edited = text.clone();
+        for (start, end) in replacements {
+            assert!(start >= metadata_end);
+            assert_eq!(&text[start..end], "counter");
+            edited.replace_range(start..end, "tally");
+        }
+        assert_eq!(
+            &edited[metadata_start..metadata_end],
+            &text[metadata_start..metadata_end]
+        );
+        engine.update(uri, &edited, 24).unwrap();
+        assert_eq!(engine.diagnostics(uri), serde_json::json!([]));
+        if metadata == graph {
+            assert!(
+                engine
+                    .definitions(uri, at(&text, "counter</name>"))
+                    .is_empty()
+            );
+            assert!(
+                engine
+                    .rename(uri, at(&text, "counter</name>"), "changed")
+                    .is_err()
+            );
+        }
+    }
+}
