@@ -7,8 +7,12 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   build:
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +29,9 @@ jobs:
           python-version: '3.12'
       - run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - run: rustup default stable
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - run: cargo fmt --check
       - run: python scripts/fetch-compatibility.py
       - run: cargo clippy --locked --all-targets -- -D warnings
@@ -35,7 +42,10 @@ jobs:
           name: native-${{ matrix.platform }}
           path: release/
           if-no-files-found: error
+          # Keep temporary builds briefly; published release downloads are separate.
+          retention-days: 7
   publish:
+    timeout-minutes: 10
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-22.04
